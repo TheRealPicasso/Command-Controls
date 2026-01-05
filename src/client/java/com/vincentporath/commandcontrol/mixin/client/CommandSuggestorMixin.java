@@ -4,6 +4,9 @@ import com.mojang.brigadier.suggestion.Suggestion;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.vincentporath.commandcontrol.client.CommandControlClient;
 import net.minecraft.client.gui.screen.ChatInputSuggestor;
+import net.minecraft.client.gui.widget.TextFieldWidget;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,12 +20,18 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Mixin to filter command suggestions in the chat input
  * This catches ALL command suggestions including client-side mod commands
+ * Only filters top-level command names, not arguments like player names
  */
 @Mixin(ChatInputSuggestor.class)
 public class CommandSuggestorMixin {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("commandcontrol-suggestor");
+
     @Shadow
     private CompletableFuture<Suggestions> pendingSuggestions;
+    
+    @Shadow
+    private TextFieldWidget textField;
 
     /**
      * Filter the suggestions after they are generated but before displayed
@@ -30,21 +39,42 @@ public class CommandSuggestorMixin {
      */
     @Inject(method = "show", at = @At("HEAD"))
     private void commandcontrol$filterSuggestions(boolean narrateFirstSuggestion, CallbackInfo ci) {
+        LOGGER.info("[CommandControls] show() method called - mixin is working!");
+        
         // Only filter if we've received sync from a CommandControl-enabled server
         if (!CommandControlClient.isSyncReceived()) {
+            LOGGER.info("[CommandControls] No sync received, not filtering");
             return;
         }
 
-        if (this.pendingSuggestions == null) {
+        if (this.pendingSuggestions == null || this.textField == null) {
             return;
         }
+        
+        // Get current input text
+        String input = this.textField.getText();
+        
+        // Only filter if this is a command (starts with /) and we're suggesting the command name
+        // If there's already a space after the command, we're suggesting arguments - don't filter those
+        if (!input.startsWith("/")) {
+            return; // Not a command, don't filter
+        }
+        
+        // Check if we're past the command name (there's a space in the input)
+        String afterSlash = input.substring(1);
+        if (afterSlash.contains(" ")) {
+            return; // We're suggesting arguments (like player names), don't filter
+        }
+        
+        LOGGER.info("[CommandControls] Filtering command suggestions for input: {}", input);
 
-        // Replace the pending suggestions with filtered ones
+        // Replace the pending suggestions with filtered ones (only for command names)
         this.pendingSuggestions = this.pendingSuggestions.thenApply(suggestions -> {
             if (suggestions == null || suggestions.isEmpty()) {
                 return suggestions;
             }
-
+            
+            int originalCount = suggestions.getList().size();
             List<Suggestion> filtered = new ArrayList<>();
 
             for (Suggestion suggestion : suggestions.getList()) {
@@ -56,17 +86,10 @@ public class CommandSuggestorMixin {
                     commandName = commandName.substring(1);
                 }
 
-                // Get base command (before any space, colon, or subcommand)
-                int spaceIndex = commandName.indexOf(' ');
+                // Handle namespaced commands like "minecraft:help"
                 int colonIndex = commandName.indexOf(':');
-                
-                if (colonIndex > 0 && (spaceIndex < 0 || colonIndex < spaceIndex)) {
-                    // Handle namespaced commands like "minecraft:help"
+                if (colonIndex > 0) {
                     commandName = commandName.substring(colonIndex + 1);
-                }
-                
-                if (spaceIndex > 0) {
-                    commandName = commandName.substring(0, spaceIndex);
                 }
 
                 // Check if this command is allowed
@@ -74,6 +97,8 @@ public class CommandSuggestorMixin {
                     filtered.add(suggestion);
                 }
             }
+            
+            LOGGER.info("[CommandControls] Filtered {}/{} suggestions", filtered.size(), originalCount);
 
             return new Suggestions(suggestions.getRange(), filtered);
         });
