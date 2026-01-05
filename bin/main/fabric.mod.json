@@ -1,0 +1,42 @@
+{
+	"schemaVersion": 1,
+	"id": "commandcontrol",
+	"version": "${version}",
+	"name": "Command Control",
+	"description": "Control which commands players can see and use. Filter command suggestions on both server and client side. Perfect for servers that want to hide admin commands or restrict access to specific commands per rank.",
+	"authors": [
+		"Vincent Porath"
+	],
+	"contact": {
+		"homepage": "https://modrinth.com/mod/commandcontrol",
+		"sources": "https://github.com/VincentPorath/CommandControl",
+		"issues": "https://github.com/VincentPorath/CommandControl/issues"
+	},
+	"license": "MIT",
+	"icon": "assets/commandcontrol/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.vincentporath.commandcontrol.CommandControl"
+		],
+		"client": [
+			"com.vincentporath.commandcontrol.client.CommandControlClient"
+		]
+	},
+	"mixins": [
+		"commandcontrol.mixins.json",
+		{
+			"config": "commandcontrol.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.14.21",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"luckperms": "*"
+	}
+}
